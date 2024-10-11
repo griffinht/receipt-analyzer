@@ -139,13 +139,28 @@ app.get('/', (c) => {
     <head>
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
       <style>
+        body { font-family: Arial, sans-serif; }
         .chart-container {
           display: flex;
           justify-content: space-between;
           margin-bottom: 20px;
+          height: 300px;
         }
         .chart-item {
-          width: 18%;
+          width: 22%;
+          height: 100%;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        th, td {
+          border: 1px solid #ddd;
+          padding: 8px;
+          text-align: left;
+        }
+        th {
+          background-color: #f2f2f2;
         }
       </style>
     </head>
@@ -155,15 +170,6 @@ app.get('/', (c) => {
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
         <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
         <div class="chart-container">
-          <div class="chart-item">
-            <canvas id="genericNameChart"></canvas>
-          </div>
-          <div class="chart-item">
-            <canvas id="storeChart"></canvas>
-          </div>
-          <div class="chart-item">
-            <canvas id="departmentChart"></canvas>
-          </div>
           ${!filters.year ? `
           <div class="chart-item">
             <canvas id="yearChart"></canvas>
@@ -174,6 +180,15 @@ app.get('/', (c) => {
             <canvas id="monthChart"></canvas>
           </div>
           ` : ''}
+          <div class="chart-item">
+            <canvas id="storeChart"></canvas>
+          </div>
+          <div class="chart-item">
+            <canvas id="departmentChart"></canvas>
+          </div>
+          <div class="chart-item">
+            <canvas id="genericNameChart"></canvas>
+          </div>
         </div>
         ${tableHtml}
         <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
@@ -208,10 +223,19 @@ app.get('/', (c) => {
               plugins: {
                 legend: {
                   position: 'top',
+                  labels: {
+                    boxWidth: 12,
+                    font: {
+                      size: 10
+                    }
+                  }
                 },
                 title: {
                   display: true,
-                  text: title
+                  text: title,
+                  font: {
+                    size: 14
+                  }
                 },
                 tooltip: {
                   callbacks: {
