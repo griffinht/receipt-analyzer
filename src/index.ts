@@ -3,6 +3,7 @@ import { Hono } from 'hono'
 import { insertReceipts, getAllReceipts, getReceiptById, Row } from './data'
 import { scaleOrdinal } from 'd3-scale';
 import { schemeCategory10 } from 'd3-scale-chromatic';
+import { createReceipt } from './routes/createReceipt'
 
 // Insert receipts into the database
 insertReceipts()
@@ -413,6 +414,9 @@ app.get('/receipts/:id', (c) => {
 
   return c.html(html)
 })
+
+// Add the new POST /receipts route
+app.post('/receipts', createReceipt)
 
 const port = 3000
 console.log(`Server is running on port ${port}`)
