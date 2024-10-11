@@ -200,7 +200,7 @@ app.get('/', (c) => {
       <div>
         <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
-        <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
+        <button onclick="window.location.href='http://localhost:3002'">Upload New Receipt</button>
         <div class="chart-container">
           <div class="chart-item">
             <canvas id="monthChart"></canvas>
