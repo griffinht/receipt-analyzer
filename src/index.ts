@@ -56,7 +56,36 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
   });
 
   const tableHtml = `
-    <table border="1" style="width: 100%; border-collapse: collapse;">
+    <style>
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: Arial, sans-serif;
+      }
+      th, td {
+        padding: 12px;
+        text-align: left;
+        border-bottom: 1px solid #ddd;
+      }
+      th {
+        background-color: #f2f2f2;
+        font-weight: bold;
+      }
+      tr:nth-child(even) {
+        background-color: #f8f8f8;
+      }
+      tr:hover {
+        background-color: #e6f3ff;
+      }
+      a {
+        color: #0066cc;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+    <table>
       <thead>
         <tr>
           <th>Receipt ID</th>
