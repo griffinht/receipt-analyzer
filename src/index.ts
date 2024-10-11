@@ -39,6 +39,8 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
   const genericNameTotals: {[key: string]: number} = {};
   const storeTotals: {[key: string]: number} = {};
   const departmentTotals: {[key: string]: number} = {};
+  const yearTotals: {[key: string]: number} = {};
+  const monthTotals: {[key: string]: number} = {};
   const filteredReceipts = receipts.filter(receipt => {
     const items = JSON.parse(receipt.items as string);
     const receiptMonth = formatDateToMonth(receipt.date as string);
@@ -73,6 +75,8 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
           const receiptMonth = formatDateToMonth(receipt.date as string);
           const receiptYear = getYear(receipt.date as string);
           storeTotals[receipt.store as string] = (storeTotals[receipt.store as string] || 0) + (receipt.total as number);
+          yearTotals[receiptYear] = (yearTotals[receiptYear] || 0) + (receipt.total as number);
+          monthTotals[getMonthName(receiptMonth)] = (monthTotals[getMonthName(receiptMonth)] || 0) + (receipt.total as number);
           return items
             .filter((item: any) => 
               (!filters.department || item.department === filters.department) &&
@@ -103,7 +107,7 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
     </table>
   `;
 
-  return { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals };
+  return { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals, yearTotals, monthTotals };
 }
 
 // Main page to display all receipts in a table with each item on a separate line
@@ -127,29 +131,49 @@ app.get('/', (c) => {
     })
     .join(', ');
 
-  const { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals } = generateTableAndChartData(receipts, filters);
+  const { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals, yearTotals, monthTotals } = generateTableAndChartData(receipts, filters);
 
   const html = `
     <!DOCTYPE html>
     <html>
     <head>
       <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+      <style>
+        .chart-container {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 20px;
+        }
+        .chart-item {
+          width: 18%;
+        }
+      </style>
     </head>
     <body>
       <div>
         <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
         <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
-        <div style="display: flex; justify-content: space-around;">
-          <div style="width: 30%;">
+        <div class="chart-container">
+          <div class="chart-item">
             <canvas id="genericNameChart"></canvas>
           </div>
-          <div style="width: 30%;">
+          <div class="chart-item">
             <canvas id="storeChart"></canvas>
           </div>
-          <div style="width: 30%;">
+          <div class="chart-item">
             <canvas id="departmentChart"></canvas>
           </div>
+          ${!filters.year ? `
+          <div class="chart-item">
+            <canvas id="yearChart"></canvas>
+          </div>
+          ` : ''}
+          ${filters.year ? `
+          <div class="chart-item">
+            <canvas id="monthChart"></canvas>
+          </div>
+          ` : ''}
         </div>
         ${tableHtml}
         <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
@@ -180,6 +204,7 @@ app.get('/', (c) => {
             },
             options: {
               responsive: true,
+              maintainAspectRatio: false,
               plugins: {
                 legend: {
                   position: 'top',
@@ -255,6 +280,42 @@ app.get('/', (c) => {
             }
           }
         );
+
+        ${!filters.year ? `
+        const yearChart = createChart(
+          document.getElementById('yearChart').getContext('2d'),
+          ${JSON.stringify(yearTotals)},
+          'Total Spent by Year',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = yearChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('year', label);
+              window.location.href = '?' + searchParams.toString();
+            }
+          }
+        );
+        ` : ''}
+
+        ${filters.year ? `
+        const monthChart = createChart(
+          document.getElementById('monthChart').getContext('2d'),
+          ${JSON.stringify(monthTotals)},
+          'Total Spent by Month in ${filters.year}',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = monthChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('month', label);
+              window.location.href = '?' + searchParams.toString();
+            }
+          }
+        );
+        ` : ''}
       </script>
     </body>
     </html>
