@@ -1,6 +1,8 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { insertReceipts, getAllReceipts, getReceiptById, Row } from './data'
+import { scaleOrdinal } from 'd3-scale';
+import { schemeCategory10 } from 'd3-scale-chromatic';
 
 // Insert receipts into the database
 insertReceipts()
@@ -17,42 +19,51 @@ function generateUrlParams(filters: {[key: string]: string | undefined}, newFilt
   ).toString();
 }
 
-// Function to format date to YYYY-MM
-function formatDateToMonth(dateString: string) {
-  return dateString.substring(0, 7); // This will return YYYY-MM
-}
-
 // Function to get year from YYYY-MM-DD
 function getYear(dateString: string) {
   return dateString.substring(0, 4); // This will return YYYY
 }
 
-// Function to get month name from YYYY-MM
+// Function to get month name from date string
 function getMonthName(dateString: string) {
-  const date = new Date(dateString + "-01");
+  const date = new Date(dateString);
   return date.toLocaleString('default', { month: 'long' });
 }
 
+// Function to format date to month (YYYY-MM)
+function formatDateToMonth(dateString: string) {
+  return dateString.substring(0, 7);
+}
+
 // Function to generate the HTML table and pie chart data
-function generateTableAndChartData(receipts: Row[], filters: {store?: string, department?: string, item?: string, month?: string, year?: string}) {
+function generateTableAndChartData(receipts: Row[], filters: {store?: string, department?: string, item?: string, year?: string, month?: string}) {
   let totalAmount = 0;
   const genericNameTotals: {[key: string]: number} = {};
   const storeTotals: {[key: string]: number} = {};
   const departmentTotals: {[key: string]: number} = {};
   const yearTotals: {[key: string]: number} = {};
   const monthTotals: {[key: string]: number} = {};
+
   const filteredReceipts = receipts.filter(receipt => {
     const items = JSON.parse(receipt.items as string);
-    const receiptMonth = formatDateToMonth(receipt.date as string);
     const receiptYear = getYear(receipt.date as string);
+    const receiptMonth = getMonthName(receipt.date as string);
     return (!filters.store || receipt.store === filters.store) &&
            (!filters.department || items.some((item: any) => item.department === filters.department)) &&
            (!filters.item || items.some((item: any) => 
              item.name.toLowerCase().includes(filters.item?.toLowerCase() ?? '') ||
              item.genericName.toLowerCase().includes(filters.item?.toLowerCase() ?? '')
            )) &&
-           (!filters.month || receiptMonth === filters.month) &&
-           (!filters.year || receiptYear === filters.year);
+           (!filters.year || receiptYear === filters.year) &&
+           (!filters.month || receiptMonth === filters.month);
+  });
+
+  filteredReceipts.forEach(receipt => {
+    const receiptYear = getYear(receipt.date as string);
+    const receiptMonth = getMonthName(receipt.date as string);
+    storeTotals[receipt.store as string] = (storeTotals[receipt.store as string] || 0) + (receipt.total as number);
+    yearTotals[receiptYear] = (yearTotals[receiptYear] || 0) + (receipt.total as number);
+    monthTotals[receiptMonth] = (monthTotals[receiptMonth] || 0) + (receipt.total as number);
   });
 
   const tableHtml = `
@@ -101,11 +112,8 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
       <tbody>
         ${filteredReceipts.flatMap((receipt: Row) => {
           const items = JSON.parse(receipt.items as string);
-          const receiptMonth = formatDateToMonth(receipt.date as string);
           const receiptYear = getYear(receipt.date as string);
-          storeTotals[receipt.store as string] = (storeTotals[receipt.store as string] || 0) + (receipt.total as number);
-          yearTotals[receiptYear] = (yearTotals[receiptYear] || 0) + (receipt.total as number);
-          monthTotals[getMonthName(receiptMonth)] = (monthTotals[getMonthName(receiptMonth)] || 0) + (receipt.total as number);
+          const receiptMonth = getMonthName(receipt.date as string);
           return items
             .filter((item: any) => 
               (!filters.department || item.department === filters.department) &&
@@ -122,7 +130,7 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
                 <tr>
                   <td><a href="/receipts/${receipt.id}">${receipt.id}</a></td>
                   <td><a href="/?${generateUrlParams(filters, {year: receiptYear})}">${receiptYear}</a></td>
-                  <td><a href="/?${generateUrlParams(filters, {month: receiptMonth})}">${getMonthName(receiptMonth)}</a></td>
+                  <td><a href="/?${generateUrlParams(filters, {month: receiptMonth})}">${receiptMonth}</a></td>
                   ${!filters.store ? `<td><a href="/?${generateUrlParams(filters, {store: receipt.store as string})}">${receipt.store}</a></td>` : ''}
                   ${!filters.item ? `<td><a href="/?${generateUrlParams(filters, {item: filters.item === item.name ? null : item.name})}">${item.name}</a></td>` : ''}
                   ${!filters.item ? `<td><a href="/?${generateUrlParams(filters, {item: filters.item === item.genericName ? null : item.genericName})}">${item.genericName}</a></td>` : ''}
@@ -146,18 +154,13 @@ app.get('/', (c) => {
     store: c.req.query('store'),
     department: c.req.query('department'),
     item: c.req.query('item'),
-    month: c.req.query('month'),
-    year: c.req.query('year')
+    year: c.req.query('year'),
+    month: c.req.query('month')
   }
   
   const activeFilters = Object.entries(filters)
     .filter(([_, value]) => value !== undefined)
-    .map(([key, value]) => {
-      if (key === 'month' && value) {
-        return `<a href="/?${generateUrlParams(filters, {[key]: null})}">${key}: ${getMonthName(value)}</a>`;
-      }
-      return `<a href="/?${generateUrlParams(filters, {[key]: null})}">${key}: ${value}</a>`;
-    })
+    .map(([key, value]) => `<a href="/?${generateUrlParams(filters, {[key]: null})}">${key}: ${value}</a>`)
     .join(', ');
 
   const { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals, yearTotals, monthTotals } = generateTableAndChartData(receipts, filters);
@@ -199,16 +202,12 @@ app.get('/', (c) => {
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
         <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
         <div class="chart-container">
-          ${!filters.year ? `
-          <div class="chart-item">
-            <canvas id="yearChart"></canvas>
-          </div>
-          ` : ''}
-          ${filters.year ? `
           <div class="chart-item">
             <canvas id="monthChart"></canvas>
           </div>
-          ` : ''}
+          <div class="chart-item">
+            <canvas id="yearChart"></canvas>
+          </div>
           <div class="chart-item">
             <canvas id="storeChart"></canvas>
           </div>
@@ -286,17 +285,33 @@ app.get('/', (c) => {
           });
         }
 
-        const genericNameChart = createChart(
-          document.getElementById('genericNameChart').getContext('2d'),
-          ${JSON.stringify(genericNameTotals)},
-          'Total Spent on Generic Item Names',
+        const monthChart = createChart(
+          document.getElementById('monthChart').getContext('2d'),
+          ${JSON.stringify(monthTotals)},
+          'Total Spent by Month',
           (event, elements) => {
             if (elements.length > 0) {
               const index = elements[0].index;
-              const label = genericNameChart.data.labels[index];
+              const label = monthChart.data.labels[index];
               const currentUrl = new URL(window.location.href);
               const searchParams = new URLSearchParams(currentUrl.search);
-              searchParams.set('item', label);
+              searchParams.set('month', label);
+              window.location.href = '?' + searchParams.toString();
+            }
+          }
+        );
+
+        const yearChart = createChart(
+          document.getElementById('yearChart').getContext('2d'),
+          ${JSON.stringify(yearTotals)},
+          'Total Spent by Year',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = yearChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('year', label);
               window.location.href = '?' + searchParams.toString();
             }
           }
@@ -334,41 +349,21 @@ app.get('/', (c) => {
           }
         );
 
-        ${!filters.year ? `
-        const yearChart = createChart(
-          document.getElementById('yearChart').getContext('2d'),
-          ${JSON.stringify(yearTotals)},
-          'Total Spent by Year',
+        const genericNameChart = createChart(
+          document.getElementById('genericNameChart').getContext('2d'),
+          ${JSON.stringify(genericNameTotals)},
+          'Total Spent on Generic Item Names',
           (event, elements) => {
             if (elements.length > 0) {
               const index = elements[0].index;
-              const label = yearChart.data.labels[index];
+              const label = genericNameChart.data.labels[index];
               const currentUrl = new URL(window.location.href);
               const searchParams = new URLSearchParams(currentUrl.search);
-              searchParams.set('year', label);
+              searchParams.set('item', label);
               window.location.href = '?' + searchParams.toString();
             }
           }
         );
-        ` : ''}
-
-        ${filters.year ? `
-        const monthChart = createChart(
-          document.getElementById('monthChart').getContext('2d'),
-          ${JSON.stringify(monthTotals)},
-          'Total Spent by Month in ${filters.year}',
-          (event, elements) => {
-            if (elements.length > 0) {
-              const index = elements[0].index;
-              const label = monthChart.data.labels[index];
-              const currentUrl = new URL(window.location.href);
-              const searchParams = new URLSearchParams(currentUrl.search);
-              searchParams.set('month', label);
-              window.location.href = '?' + searchParams.toString();
-            }
-          }
-        );
-        ` : ''}
       </script>
     </body>
     </html>
@@ -390,7 +385,7 @@ app.get('/receipts/:id', (c) => {
 
   const html = `
     <div>
-      <h2>Receipt #${id} - ${row.store} (${getMonthName(formatDateToMonth(row.date as string))} ${getYear(row.date as string)})</h2>
+      <h2>Receipt #${id} - ${row.store} (${getMonthName(row.date as string)} ${getYear(row.date as string)})</h2>
       <table border="1">
         <thead>
           <tr>
