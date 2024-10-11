@@ -33,9 +33,10 @@ function getMonthName(dateString: string) {
   return date.toLocaleString('default', { month: 'long' });
 }
 
-// Function to generate the HTML table
-function generateTable(receipts: Row[], filters: {store?: string, department?: string, item?: string, month?: string, year?: string}) {
+// Function to generate the HTML table and pie chart data
+function generateTableAndChartData(receipts: Row[], filters: {store?: string, department?: string, item?: string, month?: string, year?: string}) {
   let totalAmount = 0;
+  const genericNameTotals: {[key: string]: number} = {};
   const filteredReceipts = receipts.filter(receipt => {
     const items = JSON.parse(receipt.items as string);
     const receiptMonth = formatDateToMonth(receipt.date as string);
@@ -79,6 +80,7 @@ function generateTable(receipts: Row[], filters: {store?: string, department?: s
             )
             .map((item: any) => {
               totalAmount += item.price;
+              genericNameTotals[item.genericName] = (genericNameTotals[item.genericName] || 0) + item.price;
               return `
                 <tr>
                   <td><a href="/receipts/${receipt.id}">${receipt.id}</a></td>
@@ -97,7 +99,7 @@ function generateTable(receipts: Row[], filters: {store?: string, department?: s
     </table>
   `;
 
-  return { tableHtml, totalAmount };
+  return { tableHtml, totalAmount, genericNameTotals };
 }
 
 // Main page to display all receipts in a table with each item on a separate line
@@ -121,18 +123,89 @@ app.get('/', (c) => {
     })
     .join(', ');
 
-  const { tableHtml, totalAmount } = generateTable(receipts, filters);
+  const { tableHtml, totalAmount, genericNameTotals } = generateTableAndChartData(receipts, filters);
 
   const html = `
-    <div>
-      <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
-      ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
-      <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
-      ${tableHtml}
-      <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
-        Total: $${totalAmount.toFixed(2)}
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    </head>
+    <body>
+      <div>
+        <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
+        ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
+        <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
+        <div style="width: 50%; margin: auto;">
+          <canvas id="genericNameChart"></canvas>
+        </div>
+        ${tableHtml}
+        <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
+          Total: $${totalAmount.toFixed(2)}
+        </div>
       </div>
-    </div>
+      <script>
+        const ctx = document.getElementById('genericNameChart').getContext('2d');
+        const chart = new Chart(ctx, {
+          type: 'pie',
+          data: {
+            labels: ${JSON.stringify(Object.keys(genericNameTotals))},
+            datasets: [{
+              data: ${JSON.stringify(Object.values(genericNameTotals))},
+              backgroundColor: [
+                'rgba(255, 99, 132, 0.8)',
+                'rgba(54, 162, 235, 0.8)',
+                'rgba(255, 206, 86, 0.8)',
+                'rgba(75, 192, 192, 0.8)',
+                'rgba(153, 102, 255, 0.8)',
+                'rgba(255, 159, 64, 0.8)',
+                'rgba(199, 199, 199, 0.8)',
+                'rgba(83, 102, 255, 0.8)',
+                'rgba(40, 159, 64, 0.8)',
+                'rgba(210, 199, 199, 0.8)',
+              ],
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                position: 'top',
+              },
+              title: {
+                display: true,
+                text: 'Total Spent on Generic Item Names'
+              },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    let label = context.label || '';
+                    if (label) {
+                      label += ': ';
+                    }
+                    if (context.parsed !== null) {
+                      label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed);
+                    }
+                    return label;
+                  }
+                }
+              }
+            },
+            onClick: (event, elements) => {
+              if (elements.length > 0) {
+                const index = elements[0].index;
+                const label = chart.data.labels[index];
+                const currentUrl = new URL(window.location.href);
+                const searchParams = new URLSearchParams(currentUrl.search);
+                searchParams.set('item', label);
+                window.location.href = '?' + searchParams.toString();
+              }
+            }
+          }
+        });
+      </script>
+    </body>
+    </html>
   `
   return c.html(html)
 })
