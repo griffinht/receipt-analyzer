@@ -127,6 +127,7 @@ app.get('/', (c) => {
     <div>
       <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
       ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
+      <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
       ${tableHtml}
       <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
         Total: $${totalAmount.toFixed(2)}
