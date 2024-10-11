@@ -37,6 +37,8 @@ function getMonthName(dateString: string) {
 function generateTableAndChartData(receipts: Row[], filters: {store?: string, department?: string, item?: string, month?: string, year?: string}) {
   let totalAmount = 0;
   const genericNameTotals: {[key: string]: number} = {};
+  const storeTotals: {[key: string]: number} = {};
+  const departmentTotals: {[key: string]: number} = {};
   const filteredReceipts = receipts.filter(receipt => {
     const items = JSON.parse(receipt.items as string);
     const receiptMonth = formatDateToMonth(receipt.date as string);
@@ -70,6 +72,7 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
           const items = JSON.parse(receipt.items as string);
           const receiptMonth = formatDateToMonth(receipt.date as string);
           const receiptYear = getYear(receipt.date as string);
+          storeTotals[receipt.store as string] = (storeTotals[receipt.store as string] || 0) + (receipt.total as number);
           return items
             .filter((item: any) => 
               (!filters.department || item.department === filters.department) &&
@@ -81,6 +84,7 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
             .map((item: any) => {
               totalAmount += item.price;
               genericNameTotals[item.genericName] = (genericNameTotals[item.genericName] || 0) + item.price;
+              departmentTotals[item.department] = (departmentTotals[item.department] || 0) + item.price;
               return `
                 <tr>
                   <td><a href="/receipts/${receipt.id}">${receipt.id}</a></td>
@@ -99,7 +103,7 @@ function generateTableAndChartData(receipts: Row[], filters: {store?: string, de
     </table>
   `;
 
-  return { tableHtml, totalAmount, genericNameTotals };
+  return { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals };
 }
 
 // Main page to display all receipts in a table with each item on a separate line
@@ -123,7 +127,7 @@ app.get('/', (c) => {
     })
     .join(', ');
 
-  const { tableHtml, totalAmount, genericNameTotals } = generateTableAndChartData(receipts, filters);
+  const { tableHtml, totalAmount, genericNameTotals, storeTotals, departmentTotals } = generateTableAndChartData(receipts, filters);
 
   const html = `
     <!DOCTYPE html>
@@ -136,8 +140,16 @@ app.get('/', (c) => {
         <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
         <button onclick="window.location.href='http://localhost:3001/upload'">Upload New Receipt</button>
-        <div style="width: 50%; margin: auto;">
-          <canvas id="genericNameChart"></canvas>
+        <div style="display: flex; justify-content: space-around;">
+          <div style="width: 30%;">
+            <canvas id="genericNameChart"></canvas>
+          </div>
+          <div style="width: 30%;">
+            <canvas id="storeChart"></canvas>
+          </div>
+          <div style="width: 30%;">
+            <canvas id="departmentChart"></canvas>
+          </div>
         </div>
         ${tableHtml}
         <div style="position: fixed; bottom: 0; left: 0; width: 100%; background-color: #f1f1f1; padding: 10px; text-align: right; font-weight: bold;">
@@ -145,64 +157,104 @@ app.get('/', (c) => {
         </div>
       </div>
       <script>
-        const ctx = document.getElementById('genericNameChart').getContext('2d');
-        const chart = new Chart(ctx, {
-          type: 'pie',
-          data: {
-            labels: ${JSON.stringify(Object.keys(genericNameTotals))},
-            datasets: [{
-              data: ${JSON.stringify(Object.values(genericNameTotals))},
-              backgroundColor: [
-                'rgba(255, 99, 132, 0.8)',
-                'rgba(54, 162, 235, 0.8)',
-                'rgba(255, 206, 86, 0.8)',
-                'rgba(75, 192, 192, 0.8)',
-                'rgba(153, 102, 255, 0.8)',
-                'rgba(255, 159, 64, 0.8)',
-                'rgba(199, 199, 199, 0.8)',
-                'rgba(83, 102, 255, 0.8)',
-                'rgba(40, 159, 64, 0.8)',
-                'rgba(210, 199, 199, 0.8)',
-              ],
-            }]
-          },
-          options: {
-            responsive: true,
-            plugins: {
-              legend: {
-                position: 'top',
-              },
-              title: {
-                display: true,
-                text: 'Total Spent on Generic Item Names'
-              },
-              tooltip: {
-                callbacks: {
-                  label: function(context) {
-                    let label = context.label || '';
-                    if (label) {
-                      label += ': ';
+        function createChart(ctx, data, title, onClick) {
+          return new Chart(ctx, {
+            type: 'pie',
+            data: {
+              labels: Object.keys(data),
+              datasets: [{
+                data: Object.values(data),
+                backgroundColor: [
+                  'rgba(255, 99, 132, 0.8)',
+                  'rgba(54, 162, 235, 0.8)',
+                  'rgba(255, 206, 86, 0.8)',
+                  'rgba(75, 192, 192, 0.8)',
+                  'rgba(153, 102, 255, 0.8)',
+                  'rgba(255, 159, 64, 0.8)',
+                  'rgba(199, 199, 199, 0.8)',
+                  'rgba(83, 102, 255, 0.8)',
+                  'rgba(40, 159, 64, 0.8)',
+                  'rgba(210, 199, 199, 0.8)',
+                ],
+              }]
+            },
+            options: {
+              responsive: true,
+              plugins: {
+                legend: {
+                  position: 'top',
+                },
+                title: {
+                  display: true,
+                  text: title
+                },
+                tooltip: {
+                  callbacks: {
+                    label: function(context) {
+                      let label = context.label || '';
+                      if (label) {
+                        label += ': ';
+                      }
+                      if (context.parsed !== null) {
+                        label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed);
+                      }
+                      return label;
                     }
-                    if (context.parsed !== null) {
-                      label += new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(context.parsed);
-                    }
-                    return label;
                   }
                 }
-              }
-            },
-            onClick: (event, elements) => {
-              if (elements.length > 0) {
-                const index = elements[0].index;
-                const label = chart.data.labels[index];
-                const currentUrl = new URL(window.location.href);
-                const searchParams = new URLSearchParams(currentUrl.search);
-                searchParams.set('item', label);
-                window.location.href = '?' + searchParams.toString();
-              }
+              },
+              onClick: onClick
+            }
+          });
+        }
+
+        const genericNameChart = createChart(
+          document.getElementById('genericNameChart').getContext('2d'),
+          ${JSON.stringify(genericNameTotals)},
+          'Total Spent on Generic Item Names',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = genericNameChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('item', label);
+              window.location.href = '?' + searchParams.toString();
             }
           }
-        });
+        );
+
+        const storeChart = createChart(
+          document.getElementById('storeChart').getContext('2d'),
+          ${JSON.stringify(storeTotals)},
+          'Total Spent by Store',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = storeChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('store', label);
+              window.location.href = '?' + searchParams.toString();
+            }
+          }
+        );
+
+        const departmentChart = createChart(
+          document.getElementById('departmentChart').getContext('2d'),
+          ${JSON.stringify(departmentTotals)},
+          'Total Spent by Department',
+          (event, elements) => {
+            if (elements.length > 0) {
+              const index = elements[0].index;
+              const label = departmentChart.data.labels[index];
+              const currentUrl = new URL(window.location.href);
+              const searchParams = new URLSearchParams(currentUrl.search);
+              searchParams.set('department', label);
+              window.location.href = '?' + searchParams.toString();
+            }
+          }
+        );
       </script>
     </body>
     </html>
