@@ -4,6 +4,7 @@ import { insertReceipts, getAllReceipts, getReceiptById, Row } from './data'
 import { scaleOrdinal } from 'd3-scale';
 import { schemeCategory10 } from 'd3-scale-chromatic';
 import { createReceipt } from './routes/createReceipt'
+import { getReceiptJson } from './routes/getReceiptJson'
 
 // Insert receipts into the database
 insertReceipts()
@@ -408,7 +409,10 @@ app.get('/receipts/:id', (c) => {
         </tbody>
       </table>
       <p>Total: $${(row.total as number).toFixed(2)}</p>
-      <p><a href="/">Back to All Receipts</a></p>
+      <p>
+        <a href="/">Back to All Receipts</a>
+        <button onclick="window.open('http://localhost:3001/receipts/${id}', '_blank')">Share Receipt</button>
+      </p>
     </div>
   `
 
@@ -417,6 +421,9 @@ app.get('/receipts/:id', (c) => {
 
 // Add the new POST /receipts route
 app.post('/receipts', createReceipt)
+
+// Add the new GET /receipts/:id/json route
+app.get('/receipts/:id/json', getReceiptJson)
 
 const port = 3000
 console.log(`Server is running on port ${port}`)
