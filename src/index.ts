@@ -1,8 +1,6 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { insertReceipts, getAllReceipts, getReceiptById, Row } from './data'
-import { scaleOrdinal } from 'd3-scale';
-import { schemeCategory10 } from 'd3-scale-chromatic';
 import { createReceipt } from './routes/createReceipt'
 import { getReceiptJson } from './routes/getReceiptJson'
 
@@ -10,6 +8,18 @@ import { getReceiptJson } from './routes/getReceiptJson'
 insertReceipts()
 
 const app = new Hono()
+
+// Authentication middleware for non-API routes
+app.use('*', async (c, next) => {
+  if (!c.req.path.startsWith('/api')) {
+    const userId = c.req.header('user');
+    if (!userId) {
+      return c.text('Unauthorized: User ID is required', 401);
+    }
+    c.set('userId', userId);
+  }
+  await next();
+});
 
 // Function to generate URL parameters
 function generateUrlParams(filters: {[key: string]: string | undefined}, newFilter: {[key: string]: string | null}) {
@@ -419,11 +429,12 @@ app.get('/receipts/:id', (c) => {
   return c.html(html)
 })
 
+// API routes (no authentication required)
 // Add the new POST /receipts route
-app.post('/receipts', createReceipt)
+app.post('/api/receipts', createReceipt)
 
 // Add the new GET /receipts/:id/json route
-app.get('/receipts/:id/json', getReceiptJson)
+app.get('/api/receipts/:id/json', getReceiptJson)
 
 const port = 3000
 console.log(`Server is running on port ${port}`)
