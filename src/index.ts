@@ -11,7 +11,7 @@ const app = new Hono()
 
 // Authentication middleware for non-API routes
 app.use('*', async (c, next) => {
-  if (!c.req.path.startsWith('/api')) {
+  if (!c.req.path.startsWith('/api') && !c.req.path.startsWith('/metrics')) {
     const userId = c.req.header('user');
     if (!userId) {
       return c.text('Unauthorized: User ID is required', 401);
@@ -19,6 +19,80 @@ app.use('*', async (c, next) => {
     c.set('userId', userId);
   }
   await next();
+});
+
+// Prometheus metrics endpoint
+app.get('/metrics', async (c) => {
+  const receipts = getAllReceipts();
+  
+  // Calculate total items across all receipts
+  let totalItems = 0;
+  let totalSpent = 0;
+  const storeFrequency = new Map<string, number>();
+  const departmentFrequency = new Map<string, number>();
+  const monthlySpending = new Map<string, number>();
+
+  receipts.forEach((receipt: Row) => {
+    const items = JSON.parse(receipt.items as string);
+    totalItems += items.length;
+    totalSpent += receipt.total as number;
+    
+    // Track store frequency
+    storeFrequency.set(
+      receipt.store as string, 
+      (storeFrequency.get(receipt.store as string) || 0) + 1
+    );
+    
+    // Track monthly spending
+    const monthYear = formatDateToMonth(receipt.date as string);
+    monthlySpending.set(
+      monthYear,
+      (monthlySpending.get(monthYear) || 0) + (receipt.total as number)
+    );
+    
+    // Track department frequency
+    items.forEach((item: any) => {
+      departmentFrequency.set(
+        item.department,
+        (departmentFrequency.get(item.department) || 0) + 1
+      );
+    });
+  });
+
+  // Format metrics in Prometheus format
+  const metrics = [
+    '# HELP receipt_system_metrics Various metrics about the receipt system',
+    '# TYPE receipt_count counter',
+    `receipt_count ${receipts.length}`,
+    '# TYPE total_items counter',
+    `total_items ${totalItems}`,
+    '# TYPE total_spent counter',
+    `total_spent ${totalSpent}`,
+    '# TYPE average_items_per_receipt gauge',
+    `average_items_per_receipt ${(totalItems / receipts.length).toFixed(2)}`,
+    '# TYPE average_receipt_value gauge',
+    `average_receipt_value ${(totalSpent / receipts.length).toFixed(2)}`,
+    '',
+    '# HELP store_receipt_count Number of receipts per store',
+    '# TYPE store_receipt_count counter',
+    ...[...storeFrequency.entries()].map(([store, count]) => 
+      `store_receipt_count{store="${store}"} ${count}`
+    ),
+    '',
+    '# HELP department_item_count Number of items per department',
+    '# TYPE department_item_count counter',
+    ...[...departmentFrequency.entries()].map(([dept, count]) => 
+      `department_item_count{department="${dept}"} ${count}`
+    ),
+    '',
+    '# HELP monthly_spending Total spending per month',
+    '# TYPE monthly_spending counter',
+    ...[...monthlySpending.entries()].map(([month, total]) => 
+      `monthly_spending{month="${month}"} ${total}`
+    ),
+  ].join('\n');
+
+  return c.text(metrics);
 });
 
 // Function to generate URL parameters
@@ -212,7 +286,7 @@ app.get('/', (c) => {
       <div>
         <h1>All Receipts${activeFilters ? ` - Filtered by ${activeFilters}` : ''}</h1>
         ${activeFilters ? `<p><a href="/">Show All</a></p>` : ''}
-        <button onclick="window.location.href='http://localhost:3002'">Upload New Receipt</button>
+        <button onclick="window.location.href='http://scanner.localhost.com:2999'">Upload New Receipt</button>
         <div class="chart-container">
           <div class="chart-item">
             <canvas id="monthChart"></canvas>
@@ -421,7 +495,7 @@ app.get('/receipts/:id', (c) => {
       <p>Total: $${(row.total as number).toFixed(2)}</p>
       <p>
         <a href="/">Back to All Receipts</a>
-        <button onclick="window.open('http://localhost:3001/receipts/${id}', '_blank')">Share Receipt</button>
+        <button onclick="window.open('http://sharer.localhost.com:2999/receipts/${id}', '_blank')">Share Receipt</button>
       </p>
     </div>
   `
